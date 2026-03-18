@@ -63,16 +63,16 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 
     private static readonly CcDefinition[] CcDefinitions =
     {
-        // Tier 1 — Full Lockout
+        // Tier 1  - Full Lockout
         new("Stun",    "cc_stun",    CcTier.FullLockout, new[] { "stun_display_buff" }),
         new("Freeze",  "cc_freeze",  CcTier.FullLockout, new[] { "frozen" }),
         new("Petrify", "cc_petrify", CcTier.FullLockout, new[] { "petrified" }),
 
-        // Tier 2 — Movement Lock
+        // Tier 2  - Movement Lock
         new("Pin",  "cc_pin",  CcTier.MovementLock, new[] { "pinned", "trap_pinned" }),
         new("Root", "cc_root", CcTier.MovementLock, new[] { "grasping_vines_buff", "nemesis_vines", "nemesis_vines_large", "elder_siphon_immobilise" }),
 
-        // Tier 3 — Heavy Slow
+        // Tier 3  - Heavy Slow
         new("Temporal Chains", "cc_temporal_chains", CcTier.HeavySlow, new[] { "curse_temporal_chains" }),
         new("Hinder",         "cc_hinder",          CcTier.HeavySlow, new[] { "hinder" }),
         new("Maim",            "cc_maim",            CcTier.HeavySlow, new[] { "maim" }),
@@ -82,7 +82,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
         new("Quicksand",       "cc_slow",            CcTier.HeavySlow, new[] { "quicksand_buff" }),
         new("Basilisk Slow",   "cc_slow",            CcTier.HeavySlow, new[] { "basilisk_slow" }),
 
-        // Tier 4 — Combat Debuff
+        // Tier 4  - Combat Debuff
         new("Shock",   "cc_shock",   CcTier.CombatDebuff, new[] { "shocked" }),
         new("Blind",   "cc_blind",   CcTier.CombatDebuff, new[] { "blinded" }),
         new("Silence", "cc_silence", CcTier.CombatDebuff, new[] { "curse_silence", "curse_aura_silence" }),
@@ -106,7 +106,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
     private bool _canRender;
     private float _currentTime;
 
-    // Temp list for sorting — avoids allocation per frame
+    // Temp list for sorting  - avoids allocation per frame
     private readonly List<ActiveCc> _tempCcList = new(16);
     // Pool of ActiveCc instances to avoid allocation
     private readonly ActiveCc[] _ccPool = new ActiveCc[32];
@@ -273,7 +273,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 
     #endregion
 
-    #region Tick — Data Only
+    #region Tick  - Data Only
 
     public override Job Tick()
     {
@@ -458,7 +458,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 
     #endregion
 
-    #region Render — Drawing Only
+    #region Render  - Drawing Only
 
     public override void Render()
     {
@@ -499,7 +499,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
             var cc = _fadingSlots[i];
             float alpha = _fadingAlpha[i];
 
-            // Find which slot this CC was in — just draw in-place near center
+            // Find which slot this CC was in  - just draw in-place near center
             // Fading CCs display at the primary position (simplified)
             var rect = GetSlotRect(0, centerX, centerY, primarySize, secondarySize, spacing);
             DrawCcIcon(cc, rect, alpha, true);
@@ -513,7 +513,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
         // Slot 2 = right secondary
         switch (slotIndex)
         {
-            case 0: // Primary — centered
+            case 0: // Primary  - centered
                 return new RectangleF(
                     centerX - primarySize / 2f,
                     centerY - primarySize / 2f,

@@ -10,7 +10,7 @@ namespace WhatsACrowdControl;
 
 /// <summary>
 /// Self-contained neon-styled settings panel for WhatsACrowdControl.
-/// Red-orange (#FF6040) accent — danger/CC theme.
+/// Red-orange (#FF6040) accent  - danger/CC theme.
 /// Custom DrawList widgets, tabbed layout, icon preview carousel, live buff browser.
 /// </summary>
 public class CrowdControlSettingsUi
@@ -49,7 +49,7 @@ public class CrowdControlSettingsUi
 
     private static readonly string[] Tabs = { "Overlay", "CC Types", "Filtering", "Debug" };
 
-    // CC definitions mirror — display only, for the icon browser (16 entries, matches CcDefinitions)
+    // CC definitions mirror  - display only, for the icon browser (16 entries, matches CcDefinitions)
     private static readonly (string Name, string ImageKey, string Tier, string[] Buffs)[] CcEntries =
     {
         ("Stun",            "cc_stun",            "Full Lockout",  new[] { "stun_display_buff" }),
@@ -81,7 +81,7 @@ public class CrowdControlSettingsUi
     }
 
     // ── Palette ─────────────────────────────────────────────────────
-    // Red-orange accent — evokes danger/CC
+    // Red-orange accent  - evokes danger/CC
     private static uint Accent => Col(1f, 0.38f, 0.25f);
     private static uint AccentDim => Col(0.65f, 0.25f, 0.16f);
     private static uint AccentSoft => Col(1f, 0.38f, 0.25f, 0.15f);
@@ -399,7 +399,7 @@ public class CrowdControlSettingsUi
         else
         {
             // Header
-            string headerText = $"{liveBuffs.Count} active buffs — click to add as custom CC";
+            string headerText = $"{liveBuffs.Count} active buffs  - click to add as custom CC";
             dl.AddText(new Vector2(x + 6, y), WithAlpha(Label, 0.7f), headerText);
             y += 18f;
 

@@ -54,16 +54,16 @@ public class WhatsACrowdControlSettings : ISettings
     [Menu("CC Tier Filters", 100)]
     public EmptyNode TierFiltersHeader { get; set; }
 
-    [Menu("Full Lockout (Stun/Freeze/Petrify)", "Tier 1 — complete loss of control", 101, 100)]
+    [Menu("Full Lockout (Stun/Freeze/Petrify)", "Tier 1  - complete loss of control", 101, 100)]
     public ToggleNode EnableFullLockout { get; set; } = new(true);
 
-    [Menu("Movement Lock (Pin/Root)", "Tier 2 — cannot move", 102, 100)]
+    [Menu("Movement Lock (Pin/Root)", "Tier 2  - cannot move", 102, 100)]
     public ToggleNode EnableMovementLock { get; set; } = new(true);
 
-    [Menu("Heavy Slow (Chill/Hinder/Maim/etc)", "Tier 3 — significant movement penalty", 103, 100)]
+    [Menu("Heavy Slow (Chill/Hinder/Maim/etc)", "Tier 3  - significant movement penalty", 103, 100)]
     public ToggleNode EnableHeavySlow { get; set; } = new(true);
 
-    [Menu("Combat Debuff (Shock/Blind/Silence)", "Tier 4 — combat effectiveness reduced", 104, 100)]
+    [Menu("Combat Debuff (Shock/Blind/Silence)", "Tier 4  - combat effectiveness reduced", 104, 100)]
     public ToggleNode EnableCombatDebuff { get; set; } = new(true);
 
     // Extensibility
