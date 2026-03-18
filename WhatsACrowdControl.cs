@@ -633,7 +633,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
     {
         EnsureImagesLoaded();
         _settingsUi ??= new CrowdControlSettingsUi();
-        _settingsUi.Draw(Settings, Graphics, new CcUiState(
+        _settingsUi.Draw(Settings, Graphics, GameController, new CcUiState(
             _activeCount,
             _buffLookup.Count,
             _liveBuffSnapshot
