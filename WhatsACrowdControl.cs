@@ -201,6 +201,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 
     public override bool Initialise()
     {
+        Name = "Whats A Crowd Control";
         // Init pool
         for (int i = 0; i < _ccPool.Length; i++)
             _ccPool[i] = new ActiveCc();
