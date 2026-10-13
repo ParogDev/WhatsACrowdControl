@@ -23,7 +23,8 @@ namespace WhatsACrowdControl;
 /// </summary>
 internal static class HudLog
 {
-    private const double RepeatSec = 5, RetrySec = 30;
+    private const double RepeatSec = 5, RetrySec = 30, UnsetRetrySec = 1;
+    private const int MaxKeys = 64;   // past this, closed windows are written and forgotten (keys built from varying text)
     private static readonly string Prefix = $"[{typeof(HudLog).Assembly.GetName().Name}] ";
 
     private static readonly object Lock = new();
@@ -51,8 +52,17 @@ internal static class HudLog
         var now = DateTime.UtcNow;
         int skipped;
         string? last;
+        List<(int n, string last)>? evicted = null;
         lock (Lock)
         {
+            if (Seen.Count >= MaxKeys)
+                foreach (var k in Seen.Keys.ToList())
+                {
+                    var e = Seen[k];
+                    if ((now - e.at).TotalSeconds < RepeatSec) continue;
+                    if (e.skipped > 0) (evicted ??= new()).Add((e.skipped, e.last));
+                    Seen.Remove(k);
+                }
             if (Seen.TryGetValue(key, out var seen) && (now - seen.at).TotalSeconds < RepeatSec)
             {
                 Seen[key] = (seen.at, seen.skipped + 1, msg);
@@ -62,6 +72,8 @@ internal static class HudLog
             last = seen.last;
             Seen[key] = (now, 0, msg);
         }
+        if (evicted != null)
+            foreach (var (n, l) in evicted) WriteFault($"({n} more in the last {RepeatSec:0} s) {l}");
         if (skipped > 0) WriteFault($"({skipped} more in the last {RepeatSec:0} s) {last}");
         WriteFault(msg);
     }
@@ -92,10 +104,12 @@ internal static class HudLog
         MethodInfo? write;
         lock (Lock)
         {
-            if (_logger == null && (_broken == null || (!_permanent && DateTime.UtcNow >= _retryAt)))
+            if (_logger == null && !_permanent && DateTime.UtcNow >= _retryAt)
             {
                 _broken = null;
                 Bind();
+                // Not set yet (not now): look again in a second, not on every message.
+                if (_logger == null && _broken == null) _retryAt = DateTime.UtcNow.AddSeconds(UnsetRetrySec);
             }
             logger = _logger;
             write = error ? _error : _info;

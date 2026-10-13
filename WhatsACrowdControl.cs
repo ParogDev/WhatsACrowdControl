@@ -23,8 +23,8 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 {
     public override void OnClose()
     {
-        HudLog.Flush();
-        base.OnClose();
+        try { HudLog.Flush(); }
+        finally { base.OnClose(); }
     }
 
     #region CC Data Model
