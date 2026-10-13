@@ -47,7 +47,9 @@ internal sealed class MenuTabAttribute : Attribute
 }
 
 /// <summary>Options for a List&lt;T&gt;, T[] or Dictionary&lt;K,V&gt; property (drawn without it too). Every name is
-/// optional: <c>[MenuList(ItemName = "status", Summary = nameof(StatusRule.Label), Detail = nameof(StatusRule.Id))]</c>.</summary>
+/// optional: <c>[MenuList(ItemName = "status", Summary = nameof(StatusRule.Label), Detail = nameof(StatusRule.Id))]</c>.
+/// Put <c>[IgnoreMenu]</c> on the property as well: the HUD's own menu builder logs "not a supported settings element"
+/// for a list it meets, and this renderer still draws an ignored collection that carries [MenuList].</summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
 internal sealed class MenuListAttribute : Attribute
 {
@@ -2662,7 +2664,10 @@ internal sealed class SettingsMenu
             row.Visible = Condition(m, p, path);   // [ConditionalDisplay] hides a custom row like any other
             return row;
         }
-        if (p.GetCustomAttribute<IgnoreMenuAttribute>() != null) return null;
+        // [IgnoreMenu] hides a row, except a collection that also carries [MenuList]: the HUD's own menu builder warns
+        // about a List it can't draw ("not a supported settings element") unless the property is ignored, so a list meant
+        // for this renderer wears both
+        if (p.GetCustomAttribute<IgnoreMenuAttribute>() != null && (p.GetCustomAttribute<MenuListAttribute>() == null || KindOf(p.PropertyType) != Kind.Collection)) return null;
         row.Kind = KindOf(p.PropertyType);
         if (row.Kind == Kind.Unsupported)
         {
