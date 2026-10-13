@@ -83,8 +83,11 @@ public class WhatsACrowdControlSettings : ISettings
     [Menu("Combat Debuff (Shock/Blind/Silence)", "Tier 4  - combat effectiveness reduced", 104, 100)]
     public ToggleNode EnableCombatDebuff { get; set; } = new(true);
 
-    // Extensibility
-    [Menu("Custom CC Buff Names", "Comma-separated internal buff names to track as Tier 3 (Heavy Slow); click a buff in the CC Types tab's Live Buff Browser to add it", 105, 100)]
+    // Custom buffs
+    [Menu("Custom CC", "Extra buffs to treat as crowd control", 600)]
+    public EmptyNode CustomHeader { get; set; } = new();
+
+    [Menu("Custom CC Buff Names", "Comma-separated internal buff names to track as Tier 3 (Heavy Slow); click a buff in the CC Types tab's Live Buff Browser to add it", 601, 600)]
     public TextNode CustomCcBuffNames { get; set; } = new("");
 
     // Debug

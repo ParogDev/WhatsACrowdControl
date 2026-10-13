@@ -257,7 +257,7 @@ public class CrowdControlSettingsUi
                     else
                         SettingsMenu.Tooltip(tracked ? "Already tracked" : "Click to track as Heavy Slow");
                 }
-                if (clicked) AddCustom(s, buff.Name);
+                if (clicked && !tracked) AddCustom(s, buff.Name);   // a tracked buff is already matched: nothing to add
                 ImGui.PopID();
                 ImGui.TableNextColumn();
                 SettingsMenu.Text(LabelCol with { W = 0.6f }, buff.DisplayName ?? "");
