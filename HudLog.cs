@@ -9,8 +9,9 @@ namespace WhatsACrowdControl;
 
 /// <summary>
 /// Where this plugin's messages go. The HUD's top-left text (DebugWindow) is the player's screen, not our console:
-/// it was far too busy while playing (2026-10-12). Copied from Whats An AI Bridge's Shared/HudLog.cs (a copy, never
-/// a reference: plugins don't compile-link each other).
+/// it was far too busy while playing (2026-10-12). A per-plugin copy of the scaffolding template
+/// .claude/skills/new-plugin/templates/HudLog.template.cs (never a reference: plugins don't compile-link each other);
+/// edit the template, not this copy, and check copies with tools/check-template-copies.ps1.
 ///   - <see cref="Quiet"/>: routine diagnostics. HUD log file only, at Information (agents read it with MCP hud_log).
 ///   - <see cref="Fault"/>: something broke. Shown on screen through DebugWindow.LogError, which also writes it to the
 ///     HUD log file at Error (hud_log level=error finds it; DebugWindow writes each distinct text to the file once and
@@ -20,10 +21,11 @@ namespace WhatsACrowdControl;
 ///     <see cref="MaxKeys"/> keys are tracked; past that, new keys are shown without dedup (texts that vary).
 /// Quiet writes through the HUD's own Serilog logger (Core.Logger, the one DebugWindow writes to), found by reflection
 /// so the plugin needs no Serilog reference; its Information(string, object[]) is bound once into a delegate (no
-/// per-line MethodInfo.Invoke). If it can't be bound as a delegate, that is named once in the log file and lines go
-/// through MethodInfo.Invoke instead. While it is not set yet (not now, looked up at most once a second) a line
-/// falls back to the screen. A missing member is broken for good; a write that throws falls back for
-/// <see cref="RetrySec"/>, then tries again. Each break is named once on screen: nothing is swallowed.
+/// per-line MethodInfo.Invoke). If it can't be bound as a delegate, that is named once in the log file (written
+/// outside the lock, before the line that found it) and lines go through MethodInfo.Invoke instead. While the logger
+/// is not set yet (not now, looked up at most once a second) a line falls back to the screen. A missing member is
+/// broken for good; a write that throws falls back for <see cref="RetrySec"/>, then tries again. Each break is named
+/// once on screen: nothing is swallowed. Works unchanged on both HUDs (ExileCore and ExileCore2).
 /// </summary>
 internal static class HudLog
 {
@@ -95,12 +97,13 @@ internal static class HudLog
     {
         object? logger;
         Action<string, object[]>? write;
+        string? unbound = null;   // set by the Bind() that fell back to MethodInfo.Invoke: written below, outside the lock
         lock (Lock)
         {
             if (_logger == null && !_permanent && DateTime.UtcNow >= _retryAt)
             {
                 _broken = null;
-                Bind();
+                unbound = Bind();
                 // Not set yet (not now): look again in a second, not on every message.
                 if (_logger == null && _broken == null) _retryAt = DateTime.UtcNow.AddSeconds(UnsetRetrySec);
             }
@@ -112,6 +115,8 @@ internal static class HudLog
             try
             {
                 // Template "{M:l}" with the text as its value: braces in the text are never parsed as a template.
+                if (unbound != null)
+                    write("{M:l}", new object[] { $"{Prefix}[Log] {unbound}: falling back to MethodInfo.Invoke per line" });
                 write("{M:l}", new object[] { text });
                 _brokenShown = false;
                 return true;
@@ -139,14 +144,16 @@ internal static class HudLog
         return false;
     }
 
-    /// <summary>Find Core.Logger and its Information(string, object[]). Sets _broken (permanent) naming the missing
-    /// link; leaves everything null while the logger is just not set yet.</summary>
-    private static void Bind()
+    /// <summary>Find Core.Logger and its Information(string, object[]); call under <see cref="Lock"/>. Sets _broken
+    /// (permanent) naming the missing link; leaves everything null while the logger is just not set yet. Returns why
+    /// the method couldn't be bound as a delegate (lines then go through MethodInfo.Invoke) for the caller to write
+    /// once it has left the lock, or null.</summary>
+    private static string? Bind()
     {
         var prop = typeof(Core).GetProperties(BindingFlags.Public | BindingFlags.Static).FirstOrDefault(p => p.Name == "Logger");
-        if (prop == null) { _broken = "Core.Logger: no such public static property in this HUD build"; _permanent = true; return; }
+        if (prop == null) { _broken = "Core.Logger: no such public static property in this HUD build"; _permanent = true; return null; }
         var logger = prop.GetValue(null);
-        if (logger == null) return;
+        if (logger == null) return null;
         var args = new[] { typeof(string), typeof(object[]) };
         MethodInfo? info = null;
         foreach (var t in new[] { prop.PropertyType }.Concat(prop.PropertyType.GetInterfaces()).Append(logger.GetType()))
@@ -155,11 +162,11 @@ internal static class HudLog
         {
             _broken = $"{prop.PropertyType.FullName}: no Information(string, object[])";
             _permanent = true;
-            return;
+            return null;
         }
         // Bind once: a delegate closed over the logger, so each line is a direct call (an interface method still
-        // dispatches virtually through it). A bind that fails (signature or visibility mismatch) is named once in the
-        // log file and lines fall back to MethodInfo.Invoke.
+        // dispatches virtually through it). A bind that fails (signature or visibility mismatch) is returned for the
+        // caller to name once in the log file, and lines fall back to MethodInfo.Invoke.
         string? unbound = null;
         Action<string, object[]> write;
         try
@@ -173,8 +180,6 @@ internal static class HudLog
         }
         _info = write;
         _logger = logger;
-        if (unbound == null) return;
-        try { write("{M:l}", new object[] { $"{Prefix}[Log] {unbound}: falling back to MethodInfo.Invoke per line" }); }
-        catch { /* a failing logger is named by the next Write, which hits the same throw */ }
+        return unbound;
     }
 }
