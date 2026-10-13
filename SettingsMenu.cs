@@ -2373,20 +2373,18 @@ internal sealed class SettingsMenu
                 var fPath = path + "." + p.Name;
                 var menu = p.GetCustomAttribute<MenuAttribute>();
                 var f = new Field { Name = p.Name, Label = menu?.MenuName ?? DefaultName(p.Name), Tip = menu?.Tooltip, Path = fPath, Index = into.Count, Visible = Condition(m, p, fPath) };
-                if (_customFields.TryGetValue(fPath, out var custom))
-                {
-                    f.Custom = custom;
-                    f.Elem = new Elem { Type = p.PropertyType, TypeName = TypeName(p.PropertyType) };
-                    into.Add(f);
-                    continue;
-                }
+                // a CustomField still gets its accessors: the header line may read it as the Summary or Detail
+                if (_customFields.TryGetValue(fPath, out var custom)) f.Custom = custom;
                 bool optional = false;
                 if (!p.PropertyType.IsValueType)
                 {
                     try { optional = Nullability.Create(p).WriteState == NullabilityState.Nullable; } catch { /* no annotations: plain */ }
                 }
                 var owner = t;
+                int problemsBefore = m.Problems.Count;
                 f.Elem = BuildElem(m, p.PropertyType, fPath, (o, _, _) => Expression.Property(Expression.Convert(o, owner), p), settable, p, optional, onPath, depth);
+                // a custom-drawn field of a type the editor has no control for is no problem: the plugin draws it
+                if (f.Custom != null && m.Problems.Count > problemsBefore) m.Problems.RemoveRange(problemsBefore, m.Problems.Count - problemsBefore);
                 into.Add(f);
             }
         }
