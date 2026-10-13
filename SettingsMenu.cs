@@ -32,7 +32,10 @@ internal sealed class MenuUnitAttribute : Attribute
 
 /// <summary>Puts a root-level [Submenu] property on a named tab instead of its own: several submenus with the same
 /// tab name share it, each as a card, in declaration order. The root's own leaf nodes live on the
-/// <see cref="SettingsMenu.RootTabName"/> tab; a submenu tagged with that name joins them.</summary>
+/// <see cref="SettingsMenu.RootTabName"/> tab; a submenu tagged with that name joins them. On a root-level leaf node
+/// (a flat settings class with no submenus) it moves that row, with the rows hanging under it by parentIndex, to
+/// the named tab, into one headerless card above that tab's submenu cards. Tabs only such rows make are listed in
+/// the footer's notes, so a misspelt name shows.</summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
 internal sealed class MenuTabAttribute : Attribute
 {
@@ -44,11 +47,14 @@ internal sealed class MenuTabAttribute : Attribute
 /// Settings panel drawn from the plugin's [Menu] attributes and node types, so a plugin keeps labels, tooltips and
 /// grouping in its settings class and gets a polished panel for free. Copied per plugin like HudLog.cs (never a
 /// reference: plugins don't compile-link each other); the template lives in the scaffolding's new-plugin skill.
-/// <para>Use: a field <c>private readonly SettingsMenu _menu = new();</c> and
+/// <para>Use: a field <c>private readonly SettingsMenu _menu = new(m => HudLog.Fault(m));</c> (or <c>new()</c> without
+/// a HudLog: faults then go to DebugWindow.LogError) and
 /// <c>public override void DrawSettings() => _menu.Draw(Settings);</c>. Options, all set once (constructor or
 /// Initialise): <see cref="Accent"/> (the plugin's colour), <see cref="RootTabName"/>, <see cref="Tab"/> (a custom tab,
 /// or extra content on a generated one), <see cref="Custom"/> (replace one property's row with your own drawing, also
-/// for [IgnoreMenu] or unsupported types), <see cref="Banner"/> (a strip above the tabs).</para>
+/// for [IgnoreMenu] or unsupported types; inside it <see cref="Label"/> and <see cref="ControlColumn"/> line the row up
+/// with the generated ones), <see cref="Banner"/> (a strip above the tabs). A Tab() name that no generated tab has
+/// becomes a tab of its own and is named in the footer's notes (hover), so a typo shows.</para>
 /// <para>Layout: every root-level [Submenu] property is a tab (merge them with [MenuTab]); each submenu is a filled
 /// card with the [Menu] label as title and the tooltip as description; nested submenus are cards inside cards; every
 /// other property is a row: label, control, tooltip under it (full text on hover). EmptyNode with [Menu] is a section
@@ -77,6 +83,25 @@ internal sealed class SettingsMenu
 
     /// <summary>Hint in the filter box.</summary>
     public string FilterHint { get; set; } = "Filter settings...";
+
+    // Where the menu's own faults go (a reset that threw, a ColorNode the change check can't read). Owned by the
+    // instance, so it lives and dies with the plugin load that built the menu (a static sink would keep a reloaded
+    // plugin's old HudLog alive).
+    private readonly Action<string> _fault;
+
+    /// <param name="fault">Where faults go: pass the plugin's log (<c>m => HudLog.Fault(m)</c>) when it has one, so
+    /// they follow its dedup and file routing. Null (the default) writes them with DebugWindow.LogError.</param>
+    public SettingsMenu(Action<string>? fault = null)
+    {
+        _fault = fault ?? (m => DebugWindow.LogError(m));
+        if (PackColorError != null) Fault(PackColorError);   // the static build ran before any menu (and sink) existed
+    }
+
+    private void Fault(string message)
+    {
+        try { _fault(message); }
+        catch { /* a broken sink must not take the settings panel down; nowhere left to report it */ }
+    }
 
     private readonly List<(string name, Action body, bool first)> _customTabs = new();
     private readonly Dictionary<string, Action> _custom = new(StringComparer.Ordinal);
@@ -147,6 +172,26 @@ internal sealed class SettingsMenu
 
     /// <summary>Milliseconds the last <see cref="Draw"/> took (also shown in the footer).</summary>
     public double LastDrawMs { get; private set; }
+
+    /// <summary>Inside a <see cref="Custom"/> drawing: the x of the card's control column, as ImGui.SameLine(x) takes
+    /// it. Draw the label, then <c>ImGui.SameLine(menu.ControlColumn)</c> and the control, and the row lines up with
+    /// the generated rows around it. <see cref="Label"/> draws the label in the generated rows' style. Set per card
+    /// (and per search group) before its rows draw, so a Custom row reads its own card's column; outside a card (a
+    /// Tab() body, a Banner) it is <see cref="DefaultControlColumn"/>.</summary>
+    public float ControlColumn { get; private set; } = DefaultControlColumn;
+
+    /// <summary><see cref="ControlColumn"/> outside any card.</summary>
+    public const float DefaultControlColumn = 160f;
+
+    /// <summary>A row label as the generated rows draw it (aligned to the frame, tooltip on hover), for a
+    /// <see cref="Custom"/> row; follow it with <c>ImGui.SameLine(menu.ControlColumn)</c>. Plain on purpose: a Custom
+    /// row has no default or read-only state, so no changed-from-default dot and no reset menu.</summary>
+    public static void Label(string label, string? tip = null)
+    {
+        ImGui.AlignTextToFramePadding();
+        Text(ImGui.GetStyle().Colors[(int)ImGuiCol.Text], label);
+        if (!string.IsNullOrEmpty(tip) && ImGui.IsItemHovered()) Tooltip(tip);
+    }
 
     // ---- model ----
 
@@ -226,6 +271,7 @@ internal sealed class SettingsMenu
     {
         public readonly List<TabModel> Tabs = new();
         public readonly List<string> Problems = new();   // named once in the footer: what could not be drawn and why
+        public readonly List<string> Notes = new();      // not wrong, worth knowing (a custom tab of its own): footer hover
         public int RowCount;
         public string? DefaultsUnavailable;
     }
@@ -261,6 +307,7 @@ internal sealed class SettingsMenu
             _activeTab = Math.Clamp(_activeTab, 0, Math.Max(0, _model.Tabs.Count - 1));   // fewer tabs after a rebuild
         }
         var m = _model;
+        ControlColumn = DefaultControlColumn;   // no card yet: a Banner or Tab() body sees the default, not last frame's
         ImGui.PushID("settings-menu");
         try
         {
@@ -366,13 +413,15 @@ internal sealed class SettingsMenu
             Text(Accent, here);
             ImGui.Separator();
             float labelW = LabelWidth(_searchHits, indented: false);
+            var outerColumn = ControlColumn;
+            ControlColumn = labelW;   // this group's column, for its Custom hits
             ImGui.PushID(s.Path);
             try
             {
                 // FlatRows already holds every attached child, so a hit draws itself only (no recursion)
                 foreach (var r in _searchHits) DrawRow(r, owner, labelW, 0, recurse: false);
             }
-            finally { ImGui.PopID(); }
+            finally { ImGui.PopID(); ControlColumn = outerColumn; }
         }
         foreach (var c in s.Children) hits += DrawSearchSection(here, c, owner);
         return hits;
@@ -447,8 +496,14 @@ internal sealed class SettingsMenu
             {
                 if (s.RenderMethod != null) Guarded(s.RenderMethod, owner, s.Path);
                 float labelW = LabelWidth(s.FlatRows, indented: true);
-                foreach (var r in s.VisibleRows) DrawRow(r, owner, labelW, 0);
-                foreach (var c in s.Children) { ImGui.Spacing(); DrawSection(c, owner, depth + 1); }
+                var outerColumn = ControlColumn;
+                ControlColumn = labelW;   // this card's column, for its Custom rows; a child card sets its own
+                try
+                {
+                    foreach (var r in s.VisibleRows) DrawRow(r, owner, labelW, 0);
+                    foreach (var c in s.Children) { ImGui.Spacing(); DrawSection(c, owner, depth + 1); }
+                }
+                finally { ControlColumn = outerColumn; }
             }
         }
         finally
@@ -486,7 +541,7 @@ internal sealed class SettingsMenu
                     SectionHeader(r.Label, r.Tip);
                     break;
                 case Kind.Custom:
-                    Guarded(r.Custom!, r.Path);
+                    Guarded(r.Custom!, r.Path);   // ControlColumn already holds this card's column (DrawSection)
                     break;
                 default:
                     DrawValueRow(r, owner, labelW);   // SameLine(x) ignores Indent: the column is the same at any depth
@@ -770,13 +825,17 @@ internal sealed class SettingsMenu
             var text = $"{m.RowCount} settings  -  drawn in {LastDrawMs:0.00} ms";
             if (m.DefaultsUnavailable != null) text += "  -  reset unavailable: " + m.DefaultsUnavailable;
             if (m.Problems.Count > 0) text += $"  -  {m.Problems.Count} problem" + (m.Problems.Count == 1 ? "" : "s") + " (hover)";
+            if (m.Notes.Count > 0) text += $"  -  {m.Notes.Count} note" + (m.Notes.Count == 1 ? "" : "s") + (m.Problems.Count > 0 ? "" : " (hover)");
             _footer = text;
         }
         Dim(_footer);
-        if (m.Problems.Count > 0 && ImGui.IsItemHovered())
+        if ((m.Problems.Count > 0 || m.Notes.Count > 0) && ImGui.IsItemHovered())
         {
             ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(520f);
             foreach (var p in m.Problems) ImGui.TextUnformatted(p);
+            foreach (var n in m.Notes) Dim(n);
+            ImGui.PopTextWrapPos();
             ImGui.EndTooltip();
         }
     }
@@ -1034,6 +1093,8 @@ internal sealed class SettingsMenu
 
         var rootSection = new Section { Path = "", Title = RootTabName, Headerless = true };
         var onPath = new HashSet<Type> { rootType };   // settings types being built: a type that contains itself stops here
+        var leafTabs = new Dictionary<Row, string>();   // root-level rows with [MenuTab], moved after parentIndex linking
+        var leafSections = new Dictionary<string, Section>(StringComparer.OrdinalIgnoreCase);   // their cards, per tab
         foreach (var p in rootType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         try
         {
@@ -1060,18 +1121,57 @@ internal sealed class SettingsMenu
             }
             if (p.Name == "Enable" && p.PropertyType == typeof(ToggleNode)) continue;   // the HUD's own checkbox in the plugin list
             var row = BuildRow(m, p, p.Name, p.Name);
-            if (row != null) rootSection.Rows.Add(row);
+            if (row == null) continue;
+            rootSection.Rows.Add(row);
+            var leafTab = p.GetCustomAttribute<MenuTabAttribute>()?.Tab?.Trim();
+            if (!string.IsNullOrEmpty(leafTab) && !string.Equals(leafTab, RootTabName, StringComparison.OrdinalIgnoreCase))
+                leafTabs[row] = leafTab;
         }
         catch (Exception ex) { m.Problems.Add($"{p.Name}: not drawn, building it threw {ex.GetType().Name}: {ex.Message}"); }
+        // parentIndex links first, across every root-level row, then [MenuTab] moves top-level rows (their attached
+        // children with them) to that tab's own headerless card at the top of the tab. A tagged row attached under an
+        // untagged one stays with its parent: named in the notes.
         AttachByIndex(m, rootSection);
+        foreach (var (row, tab) in leafTabs)
+        {
+            if (row.Attached)
+            {
+                m.Problems.Add($"{row.Path}: [MenuTab(\"{tab}\")] ignored, the row hangs under {row.ParentRow?.Path} by parentIndex and stays with it (tag the parent, or drop the parentIndex)");
+                continue;
+            }
+            if (!leafSections.TryGetValue(tab, out var ls))
+                leafSections[tab] = ls = new Section { Path = "#tab:" + tab, Title = tab, Headerless = true };
+            ls.Rows.Add(row);
+            rootSection.Rows.Remove(row);
+        }
+        var submenuTabs = m.Tabs.Select(x => x.Name).ToList();   // before leaf and custom ones
+        foreach (var (name, ls) in leafSections)
+        {
+            // a new tab is right for a flat settings class; one that nearly matches a submenu tab is likely a typo
+            if (!m.Tabs.Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))
+                && NearTab(name, submenuTabs) is { } meant)
+                m.Notes.Add($"[MenuTab(\"{name}\")]: no submenu tab has that name, so it is a tab of its own (meant \"{meant}\"?)");
+            TabNamed(name).Sections.Insert(0, ls);
+        }
+        if (rootSection.Rows.Count == 0)   // every root row moved away: no empty card on the root tab, nor an empty tab
+        {
+            foreach (var t in m.Tabs) t.Sections.Remove(rootSection);
+            m.Tabs.RemoveAll(t => t.Sections.Count == 0 && t.Before.Count == 0 && t.After.Count == 0);
+        }
         if (rootSection.Rows.Count > 0 && !m.Tabs.Any(t => t.Sections.Contains(rootSection)))
         {
             var t = TabNamed(RootTabName);
             t.Sections.Insert(0, rootSection);
             if (m.Tabs[0] != t) { m.Tabs.Remove(t); m.Tabs.Insert(0, t); }
         }
+        var generatedTabs = m.Tabs.Select(x => x.Name).ToList();   // every generated tab, before the custom ones
         foreach (var (name, body, first) in _customTabs)
         {
+            // a Tab() name no generated tab has makes a tab of its own: right for a Debug tab, a likely typo when it
+            // nearly matches a generated tab, so only that case is named
+            if (!m.Tabs.Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))
+                && NearTab(name, generatedTabs) is { } meant)
+                m.Notes.Add($"Tab(\"{name}\"): no generated tab has that name, so it is a tab of its own (meant \"{meant}\"?)");
             var t = TabNamed(name);
             if (first) t.Before.Add(body); else t.After.Add(body);
         }
@@ -1079,6 +1179,37 @@ internal sealed class SettingsMenu
         m.RowCount = m.Tabs.Sum(t => t.Sections.Sum(CountRows));
         BuildDefaults(m, settings);
         return m;
+    }
+
+    /// <summary>The tab in <paramref name="tabs"/> that <paramref name="name"/> nearly matches (the same letters and
+    /// digits ignoring case, spaces and punctuation, or 1 edit away, 2 when both are over 6 characters), or null.</summary>
+    private static string? NearTab(string name, List<string> tabs)
+    {
+        static string Norm(string s) => new string(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        var a = Norm(name);
+        foreach (var tab in tabs)
+        {
+            var b = Norm(tab);
+            if (a == b) return tab;
+            int max = Math.Min(a.Length, b.Length) > 6 ? 2 : 1;
+            if (a.Length >= 3 && b.Length >= 3 && Math.Abs(a.Length - b.Length) <= max && EditDistance(a, b) <= max) return tab;
+        }
+        return null;
+    }
+
+    private static int EditDistance(string a, string b)
+    {
+        var prev = new int[b.Length + 1];
+        var cur = new int[b.Length + 1];
+        for (int j = 0; j <= b.Length; j++) prev[j] = j;
+        for (int i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            (prev, cur) = (cur, prev);
+        }
+        return prev[b.Length];
     }
 
     private static bool RootHasRows(Type rootType) =>
@@ -1308,12 +1439,12 @@ internal sealed class SettingsMenu
 
     private static object? ValueOf(object node) => Accessor(node.GetType())?.get(node);
 
-    private static void SetValue(object node, object? value)
+    private void SetValue(object node, object? value)
     {
         var a = Accessor(node.GetType());
         if (a?.set == null || value == null) return;
         try { a.Value.set(node, value); }
-        catch (Exception ex) { DebugWindow.LogError($"[SettingsMenu] reset of {node.GetType().Name} failed: {ex.GetType().Name}: {ex.Message}"); }
+        catch (Exception ex) { Fault($"[SettingsMenu] reset of {node.GetType().Name} failed: {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private void BuildDefaults(Model m, ISettings settings)
@@ -1403,6 +1534,7 @@ internal sealed class SettingsMenu
     /// different Color in the other, so R/G/B/A are read as property or field by name. Null when the type has no
     /// such members (then colours never show "changed").</summary>
     private static readonly Func<object, uint>? PackColor = BuildPackColor();
+    private static string? PackColorError;   // no initializer: BuildPackColor (PackColor's initializer) sets it; each menu reports it once
 
     private static Func<object, uint>? BuildPackColor()
     {
@@ -1436,7 +1568,7 @@ internal sealed class SettingsMenu
         }
         catch (Exception ex)
         {
-            DebugWindow.LogError($"[SettingsMenu] ColorNode.Value has no R/G/B/A to compare ({ex.GetType().Name}: {ex.Message}): colour rows never show changed-from-default");
+            PackColorError = $"[SettingsMenu] ColorNode.Value has no R/G/B/A to compare ({ex.GetType().Name}: {ex.Message}): colour rows never show changed-from-default";
             return null;
         }
     }
