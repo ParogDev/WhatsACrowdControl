@@ -30,7 +30,7 @@ The plugin follows a strict Tick/Render separation:
 | `Initialise()` | Initializes object pool, builds buff→definition lookup |
 | `Tick()` | Scans player buffs, matches against CC definitions, sorts by priority, fills display slots, manages fade animations |
 | `Render()` | Draws CC icons with backgrounds, sweep overlays, timer text, fade animations |
-| `DrawSettings()` | Delegates to `CrowdControlSettingsUi` for custom neon-styled settings panel |
+| `DrawSettings()` | Delegates to `CrowdControlSettingsUi`: `SettingsMenu` (SettingsMenu.cs, from the scaffolding new-plugin template) draws the Overlay tab from [Menu] headers/rows; CC Types (tier legend, icon browser, live buff browser) and Debug tabs are hand-drawn |
 
 ### Current Settings
 
