@@ -8,9 +8,10 @@ using Graphics = ExileCore.Graphics;
 namespace WhatsACrowdControl;
 
 /// <summary>
-/// Settings panel: the generated SettingsMenu (the Overlay tab from the [Menu] headers and rows) plus what it can't
-/// know about: a live status strip above the tabs, the CC Types tab (tier legend, icon browser, live buff browser that
-/// adds a buff to Custom CC Buff Names with a click) and a live Debug tab (counts, icon load status).
+/// Settings panel: the generated SettingsMenu (the Overlay tab from the [Menu] headers and rows, Custom CC Buff Names as
+/// its chip list) plus what it can't know about: the tier colour dot and rich tooltip on the four tier toggles, a live
+/// status strip above the tabs, the CC Types tab (tier legend, icon browser, live buff browser that adds a buff to the
+/// custom list with a click) and a live Debug tab (counts, icon load status).
 /// Red-orange (#FF6040) accent: danger/CC theme. Rich tooltips come from WhatsATooltip over the PluginBridge when it
 /// is loaded, and are simply absent when it isn't.
 /// </summary>
@@ -26,14 +27,30 @@ public class CrowdControlSettingsUi
     private bool _bridgeChecked;
     private Action<string, string, string[], IntPtr, uint, uint, uint, uint, uint, uint>? _ttForCcEntry;
     private Action<string, string, float, int, bool, uint, uint, uint, uint, uint>? _ttForLiveBuff;
+    // the building blocks, for the tier toggles' tooltip (header, tier badge, members)
+    private Func<uint, uint, uint, uint, uint, float, bool>? _ttBegin;
+    private Action? _ttEnd, _ttSeparator;
+    private Action<string, IntPtr, float>? _ttHeader;
+    private Action<string, uint>? _ttBadge;
+    private Action<string>? _ttBody;
 
     private void EnsureBridge(GameController gc)
     {
         if (_bridgeChecked) return;
-        _ttForCcEntry = gc.PluginBridge.GetMethod<Action<string, string, string[], IntPtr, uint, uint, uint, uint, uint, uint>>("WhatsATooltip.ForCcEntry");
-        _ttForLiveBuff = gc.PluginBridge.GetMethod<Action<string, string, float, int, bool, uint, uint, uint, uint, uint>>("WhatsATooltip.ForLiveBuff");
+        var bridge = gc.PluginBridge;
+        _ttForCcEntry = bridge.GetMethod<Action<string, string, string[], IntPtr, uint, uint, uint, uint, uint, uint>>("WhatsATooltip.ForCcEntry");
+        _ttForLiveBuff = bridge.GetMethod<Action<string, string, float, int, bool, uint, uint, uint, uint, uint>>("WhatsATooltip.ForLiveBuff");
+        _ttBegin = bridge.GetMethod<Func<uint, uint, uint, uint, uint, float, bool>>("WhatsATooltip.Begin");
+        _ttEnd = bridge.GetMethod<Action>("WhatsATooltip.End");
+        _ttHeader = bridge.GetMethod<Action<string, IntPtr, float>>("WhatsATooltip.Header");
+        _ttBadge = bridge.GetMethod<Action<string, uint>>("WhatsATooltip.Badge");
+        _ttSeparator = bridge.GetMethod<Action>("WhatsATooltip.Separator");
+        _ttBody = bridge.GetMethod<Action<string>>("WhatsATooltip.Body");
         _bridgeChecked = true;
     }
+
+    /// <summary>Edits made through the settings panel's list editor (Custom CC Buff Names), counting up.</summary>
+    public int ListEdits => _menu.ListEdits;
 
     // CC definitions mirror  - display only, for the icon browser (16 entries, matches CcDefinitions)
     private static readonly (string Name, string ImageKey, string Tier, string[] Buffs)[] CcEntries =
@@ -56,12 +73,14 @@ public class CrowdControlSettingsUi
         ("Silence",         "cc_silence",         "Combat Debuff", new[] { "curse_silence", "curse_aura_silence" }),
     };
 
-    private static readonly (string Tier, string Members)[] TierLegend =
+    // Also the 4 tier toggles' lead dot and tooltip on the Overlay tab (Setting = the toggle property; Fallback = the plain
+    // tooltip when WhatsATooltip isn't loaded, built once)
+    private static readonly (string Tier, string Members, string Setting, string Fallback)[] TierLegend =
     {
-        ("Full Lockout", "Stun / Freeze / Petrify"),
-        ("Movement Lock", "Pin / Root"),
-        ("Heavy Slow", "Chill / Hinder / Maim / Tar / Ash / Quicksand / Basilisk"),
-        ("Combat Debuff", "Shock / Blind / Silence"),
+        ("Full Lockout", "Stun / Freeze / Petrify", nameof(WhatsACrowdControlSettings.EnableFullLockout), "Full Lockout (tier 1): Stun / Freeze / Petrify\nComplete loss of control"),
+        ("Movement Lock", "Pin / Root", nameof(WhatsACrowdControlSettings.EnableMovementLock), "Movement Lock (tier 2): Pin / Root\nCannot move"),
+        ("Heavy Slow", "Chill / Hinder / Maim / Tar / Ash / Quicksand / Basilisk", nameof(WhatsACrowdControlSettings.EnableHeavySlow), "Heavy Slow (tier 3): Chill / Hinder / Maim / Tar / Ash / Quicksand / Basilisk\nSignificant movement penalty (custom CC buffs land here)"),
+        ("Combat Debuff", "Shock / Blind / Silence", nameof(WhatsACrowdControlSettings.EnableCombatDebuff), "Combat Debuff (tier 4): Shock / Blind / Silence\nCombat effectiveness reduced"),
     };
 
     // ── Palette ─────────────────────────────────────────────────────
@@ -83,6 +102,39 @@ public class CrowdControlSettingsUi
             .Banner(DrawStatusStrip)
             .Tab("CC Types", DrawCcTypesTab)
             .Tab("Debug", DrawDebugTab);
+        // the tier toggles: a dot in the tier's colour before the label, and the rich tooltip (members, severity) on hover
+        foreach (var (tier, members, setting, fallback) in TierLegend)
+        {
+            var color = TierColor(tier);
+            _menu.RowLead(setting, () => TierDot(color));
+            _menu.RowTip(setting, () => TierTip(tier, members, fallback, color));
+        }
+    }
+
+    private static void TierDot(Vector4 color)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var c = ImGui.GetCursorScreenPos() + new Vector2(5f, ImGui.GetFrameHeight() * 0.5f);
+        dl.AddCircleFilled(c, 4f, U32(color), 12);
+        ImGui.Dummy(new Vector2(10f, ImGui.GetFrameHeight()));
+    }
+
+    private void TierTip(string tier, string members, string fallback, Vector4 color)
+    {
+        if (_ttBegin == null || _ttEnd == null)
+        {
+            SettingsMenu.Tooltip(fallback);
+            return;
+        }
+        _ttBegin(U32(Accent), U32(AccentDim), U32(LabelCol), U32(Desc), U32(CardBg), 320f);
+        try
+        {
+            _ttHeader?.Invoke(tier, IntPtr.Zero, 0f);
+            _ttBadge?.Invoke(tier, U32(color));
+            _ttSeparator?.Invoke();
+            _ttBody?.Invoke(members);
+        }
+        finally { _ttEnd(); }
     }
 
     public void Draw(WhatsACrowdControlSettings s, Graphics gfx, GameController gc, CcUiState state)
@@ -128,7 +180,7 @@ public class CrowdControlSettingsUi
             + "3 active CCs, sorted by tier then duration. Tiers are switched on the Overlay tab (CC Tier Filters).");
 
         _menu.SectionHeader("Tiers");
-        foreach (var (tier, members) in TierLegend)
+        foreach (var (tier, members, _, _) in TierLegend)
         {
             _menu.Badge(tier, TierColor(tier));
             ImGui.SameLine();
@@ -271,15 +323,12 @@ public class CrowdControlSettingsUi
         SettingsMenu.Dim("* = already tracked");
     }
 
-    private static void AddCustom(WhatsACrowdControlSettings s, string name)
+    private void AddCustom(WhatsACrowdControlSettings s, string name)
     {
-        var node = s.CustomCcBuffNames;
-        if (node == null) return;
-        var current = node.Value ?? "";
-        foreach (var part in current.Split(','))
-            if (string.Equals(part.Trim(), name, StringComparison.Ordinal)) return;   // already listed
-        if (!string.IsNullOrWhiteSpace(current) && !current.TrimEnd().EndsWith(",")) current += ",";
-        node.Value = current + name;
+        var list = s.CustomCcBuffs ??= new List<string>();
+        if (list.Contains(name, StringComparer.Ordinal)) return;   // already listed
+        list.Add(name);
+        _menu.ListEdited();   // the plugin rebuilds its lookup on the count
     }
 
     // ── Debug tab ───────────────────────────────────────────────────

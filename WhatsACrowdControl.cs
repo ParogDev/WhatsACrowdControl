@@ -133,10 +133,10 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 
     // Custom CC definition for user-added buffs
     private CcDefinition? _customCcDef;
-    private string _lastCustomBuffNames = "";
+    private int _lastListEdits;
 
     // Custom settings UI
-    private CrowdControlSettingsUi _settingsUi;
+    private CrowdControlSettingsUi? _settingsUi;
 
     // Live buff snapshot for settings UI
     private readonly List<LiveBuffEntry> _liveBuffSnapshot = new(64);
@@ -219,6 +219,7 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
         for (int i = 0; i < _fadingSlots.Length; i++)
             _fadingSlots[i] = new ActiveCc();
 
+        MigrateCustomBuffs();
         BuildLookup();
         return true;
     }
@@ -238,6 +239,17 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
         RebuildCustomBuffs();
     }
 
+    /// <summary>The old comma-separated Custom CC Buff Names string becomes entries of the CustomCcBuffs list, once.</summary>
+    private void MigrateCustomBuffs()
+    {
+        Settings.CustomCcBuffs ??= new List<string>();
+        var old = Settings.CustomCcBuffNames?.Value;
+        if (string.IsNullOrWhiteSpace(old)) return;
+        foreach (var name in old.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (!Settings.CustomCcBuffs.Contains(name, StringComparer.Ordinal)) Settings.CustomCcBuffs.Add(name);
+        Settings.CustomCcBuffNames!.Value = "";
+    }
+
     private void RebuildCustomBuffs()
     {
         // Remove old custom entries
@@ -247,19 +259,11 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
                 _buffLookup.Remove(buffName);
         }
 
-        var customStr = Settings.CustomCcBuffNames?.Value ?? "";
-        if (string.IsNullOrWhiteSpace(customStr))
-        {
-            _customCcDef = null;
-            _lastCustomBuffNames = customStr;
-            return;
-        }
-
-        var names = customStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var names = (Settings.CustomCcBuffs ?? new List<string>())
+            .Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).Distinct(StringComparer.Ordinal).ToArray();
         if (names.Length == 0)
         {
             _customCcDef = null;
-            _lastCustomBuffNames = customStr;
             return;
         }
 
@@ -269,7 +273,6 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
             if (!_buffLookup.ContainsKey(name))
                 _buffLookup[name] = _customCcDef;
         }
-        _lastCustomBuffNames = customStr;
     }
 
     private bool IsTierEnabled(CcTier tier) => tier switch
@@ -290,10 +293,13 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
         _currentTime += (float)GameController.DeltaTime;
         _canRender = false;
 
-        // Check custom buffs changed
-        var currentCustom = Settings.CustomCcBuffNames?.Value ?? "";
-        if (currentCustom != _lastCustomBuffNames)
+        // The custom list is edited only in the settings panel (its list editor counts every edit)
+        var edits = _settingsUi?.ListEdits ?? 0;
+        if (edits != _lastListEdits)
+        {
+            _lastListEdits = edits;
             RebuildCustomBuffs();
+        }
 
         // Guard: not in game or dead
         if (!GameController.InGame)
