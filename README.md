@@ -35,7 +35,7 @@ Part of the **WhatsA** plugin family for ExileApi.
 | Movement Lock | On | Track Tier 2: Pin, Root |
 | Heavy Slow | On | Track Tier 3: Chill, Hinder, Maim, Temporal Chains, etc. |
 | Combat Debuff | On | Track Tier 4: Shock, Blind, Silence |
-| Custom CC Buff Names | *(empty)* | Add your own buff names (comma-separated), tracked as Tier 3 |
+| Custom CC Buff Names | *(empty)* | Add your own buff names (type one and press Enter, or click a buff in the Live Buff Browser), tracked as Tier 3 |
 
 <details>
 <summary>Technical Details</summary>
@@ -113,7 +113,7 @@ Icons are stored in `images/` as PNG files. Each CC type maps to an image key fo
 
 ### Custom Buffs
 
-Users can add arbitrary buff names via the **Custom CC Buff Names** setting. Enter comma-separated internal buff names (e.g. `my_custom_debuff, another_debuff`). These are tracked as Tier 3 (Heavy Slow) and use the fallback icon.
+Users can add arbitrary buff names via the **Custom CC Buff Names** list: type an internal buff name (e.g. `my_custom_debuff`) and press Enter, click a chip to drop it, or click a buff in the CC Types tab's Live Buff Browser (an older comma-separated setting is migrated at load). These are tracked as Tier 3 (Heavy Slow) and use the fallback icon.
 
 </details>
 

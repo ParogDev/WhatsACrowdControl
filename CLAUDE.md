@@ -18,7 +18,7 @@ The plugin follows a strict Tick/Render separation:
 
 3. **CC Definitions** are statically defined with display name, image key, tier (FullLockout > MovementLock > HeavySlow > CombatDebuff), and one or more buff name strings to match against.
 
-4. **Custom CC** support lets users add comma-separated buff names tracked as Heavy Slow tier.
+4. **Custom CC** support lets users add buff names (a chip list in the settings, or a click in the Live Buff Browser) tracked as Heavy Slow tier.
 
 5. **Object pooling** avoids per-frame allocations — `ActiveCc` instances are pre-allocated and reused.
 
@@ -53,7 +53,7 @@ The plugin follows a strict Tick/Render separation:
 | EnableMovementLock | ToggleNode | true | Track pin/root |
 | EnableHeavySlow | ToggleNode | true | Track chill/hinder/maim/etc |
 | EnableCombatDebuff | ToggleNode | true | Track shock/blind/silence |
-| CustomCcBuffNames | TextNode | "" | Comma-separated custom buff names |
+| CustomCcBuffs | List<string> | empty | Custom buff names (chips; the old comma-separated CustomCcBuffNames TextNode is migrated into it at load) |
 | DebugMode | ToggleNode | false | Log all timed buffs |
 
 Section headers (EmptyNode with `[Menu(index)]`; rows hang under them with `parentIndex`): LayoutHeader 200, VisualHeader 300, AreasHeader 400, TierFiltersHeader 100, CustomHeader 600, DebugHeader 500. The settings class stays flat on purpose: nesting rows into [Submenu] classes would change the JSON shape and reset saved settings.

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
 using ExileCore.Shared.Nodes;
@@ -87,7 +88,14 @@ public class WhatsACrowdControlSettings : ISettings
     [Menu("Custom CC", "Extra buffs to treat as crowd control", 600)]
     public EmptyNode CustomHeader { get; set; } = new();
 
-    [Menu("Custom CC Buff Names", "Comma-separated internal buff names to track as Tier 3 (Heavy Slow); click a buff in the CC Types tab's Live Buff Browser to add it", 601, 600)]
+    [Menu("Custom CC Buff Names", "Internal buff names to track as Tier 3 (Heavy Slow): type one and press Enter, click a chip to drop it, or click a buff in the CC Types tab's Live Buff Browser", 601, 600)]
+    [MenuList(ItemName = "buff name", Chips = true)]
+    [IgnoreMenu]   // the HUD's own menu builder can't draw a list; SettingsMenu draws an ignored [MenuList] collection
+    public List<string> CustomCcBuffs { get; set; } = new();
+
+    /// <summary>Before the list: the same names as one comma-separated string. Read once at load into
+    /// <see cref="CustomCcBuffs"/> and cleared, so an old settings file keeps its custom CCs.</summary>
+    [IgnoreMenu]
     public TextNode CustomCcBuffNames { get; set; } = new("");
 
     // Debug
