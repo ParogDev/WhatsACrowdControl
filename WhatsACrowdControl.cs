@@ -21,6 +21,12 @@ public record CcUiState(
 
 public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
 {
+    public override void OnClose()
+    {
+        HudLog.Flush();
+        base.OnClose();
+    }
+
     #region CC Data Model
 
     public enum CcTier { FullLockout = 1, MovementLock = 2, HeavySlow = 3, CombatDebuff = 4 }
@@ -115,6 +121,9 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
     // Track which definitions are currently active (for fade-out detection)
     private readonly HashSet<string> _prevActiveImageKeys = new();
     private readonly HashSet<string> _currActiveImageKeys = new();
+
+    // DebugMode: timed buffs seen last tick / this tick, so each appearance is logged once
+    private HashSet<string> _debugPrevBuffs = new(), _debugCurrBuffs = new();
 
     // Track when each CC image key first appeared (for fade-in)
     private readonly Dictionary<string, float> _appearTimes = new();
@@ -316,6 +325,9 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
             _prevActiveImageKeys.Add(key);
         _currActiveImageKeys.Clear();
 
+        (_debugPrevBuffs, _debugCurrBuffs) = (_debugCurrBuffs, _debugPrevBuffs);
+        _debugCurrBuffs.Clear();
+
         // Reset pool
         _poolIndex = 0;
         _tempCcList.Clear();
@@ -329,11 +341,9 @@ public class WhatsACrowdControl : BaseSettingsPlugin<WhatsACrowdControlSettings>
             var buffName = buff.Name;
             if (string.IsNullOrEmpty(buffName)) continue;
 
-            if (Settings.DebugMode)
-            {
-                if (buff.Timer > 0)
-                    LogMessage($"[CC Debug] Buff: {buffName} Timer: {buff.Timer:F2} MaxTime: {buff.MaxTime:F2}", 0.05f);
-            }
+            // Debug: one log-file line when a timed buff appears (not one per frame, never on screen).
+            if (Settings.DebugMode && buff.Timer > 0 && _debugCurrBuffs.Add(buffName) && !_debugPrevBuffs.Contains(buffName))
+                HudLog.Quiet($"[CC Debug] Buff: {buffName} Timer: {buff.Timer:F2} MaxTime: {buff.MaxTime:F2}");
 
             if (!_buffLookup.TryGetValue(buffName, out var def))
                 continue;
