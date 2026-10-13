@@ -79,7 +79,7 @@ public class CrowdControlSettingsUi
 
     public CrowdControlSettingsUi()
     {
-        _menu = new SettingsMenu { Accent = Accent, RootTabName = "Overlay" }
+        _menu = new SettingsMenu(m => HudLog.Fault(m)) { Accent = Accent, RootTabName = "Overlay" }
             .Banner(DrawStatusStrip)
             .Tab("CC Types", DrawCcTypesTab)
             .Tab("Debug", DrawDebugTab);
