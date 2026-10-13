@@ -127,7 +127,8 @@ internal sealed class MenuHexColorAttribute : Attribute
 /// cost.</para>
 /// <para>Collections: a List&lt;T&gt;, T[] or Dictionary&lt;K,V&gt; property (K string, int or enum) is a row with a
 /// foldable body: one line per element with up/down/remove, an add row, an empty-state hint, and a right-click
-/// reset to the fresh object's contents. Elements are edited in place: string (text, or [MenuChoices] buttons, or a
+/// reset to the fresh object's contents (a section's "Reset to defaults" leaves its lists alone: that reset is one
+/// click, a list is hours of typing). Elements are edited in place: string (text, or [MenuChoices] buttons, or a
 /// [MenuHexColor] picker), bool (pill), int/long/float/double (input, or a slider with [MenuRange]), enum (combo),
 /// the HUD's colour struct (picker), a settings node (drawn as its row would be), and a plain class with public
 /// get/set properties: folded to a title line (its first string property, or [MenuList(Summary)]) with a detail and an
@@ -285,7 +286,9 @@ internal sealed class SettingsMenu
     }
 
     /// <summary>Edits made through collection rows (add, remove, reorder, a field changed), counting up: compare with
-    /// the last value you saw to recompile what the lists feed. Node rows don't count; their nodes have OnValueChanged.</summary>
+    /// the last value you saw to recompile what the lists feed. Node rows don't count; their nodes have OnValueChanged.
+    /// Edits made elsewhere don't count either (a settings reload, another tool writing the settings file, the plugin's
+    /// own code): a list whose contents feed a lookup also wants a cheap per-tick compare against what was compiled.</summary>
     public int ListEdits { get; private set; }
 
     /// <summary>A <see cref="CustomField"/> or <see cref="ListExtras"/> drawing changed something: counts it.</summary>
@@ -1369,7 +1372,15 @@ internal sealed class SettingsMenu
         public float KeyW;
     }
 
-    private readonly record struct PillKey(object Owner, object? Key, int Index, Elem Elem);
+    /// <summary>One pill's animation state: the owner (an element, or the collection for a bool list) by reference,
+    /// so two elements that compare equal by value still animate apart; the dictionary key by value.</summary>
+    private readonly record struct PillKey(object Owner, object? Key, int Index, Elem Elem)
+    {
+        public bool Equals(PillKey other) =>
+            ReferenceEquals(Owner, other.Owner) && Equals(Key, other.Key) && Index == other.Index && ReferenceEquals(Elem, other.Elem);
+        public override int GetHashCode() =>
+            HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Owner), Key, Index, System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Elem));
+    }
 
     private readonly Dictionary<string, int> _listOpen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _listInput = new(StringComparer.Ordinal);
@@ -1411,7 +1422,13 @@ internal sealed class SettingsMenu
         ImGui.BeginChild("##list", new Vector2(0, 0), ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY | ImGuiChildFlags.AlwaysAutoResize);
         try
         {
-            if (c.Above != null) Guarded(c.Above, r.Path);
+            if (c.Above != null)
+            {
+                Guarded(c.Above, r.Path);
+                // the hook may have added or removed entries (a search's Add button): the body draws the real count
+                count = ((System.Collections.ICollection)coll).Count;
+                if (_listOpen.TryGetValue(r.Path, out int openIdx) && openIdx >= count) _listOpen[r.Path] = -1;
+            }
             bool structural = c.Shape == Shape.Dict ? DrawDict(r, c, coll, count) : DrawList(r, c, owner, coll, count);
             if (c.Below != null) Guarded(c.Below, r.Path);
             if (structural)
@@ -1525,23 +1542,24 @@ internal sealed class SettingsMenu
             float addW = ImGui.CalcTextSize("Add").X + 2 * ImGui.GetStyle().FramePadding.X + 8f;
             ImGui.SetNextItemWidth(Math.Max(80f, ImGui.GetContentRegionAvail().X - addW - ImGui.GetStyle().ItemSpacing.X));
             bool enter = ImGui.InputTextWithHint("##add", c.AddHint, ref input, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+            if (enter) ImGui.SetKeyboardFocusHere(-1);   // Enter deactivates the box: back into it, to keep typing (the next path, the next name)
             _listInput[r.Path] = input;
             var trimmed = input.AsSpan().Trim();
+            bool dupe = !c.AllowDuplicates && trimmed.Length > 0 && ContainsString(c, coll, count, trimmed);   // span compares, no string per frame
             ImGui.SameLine();
-            ImGui.BeginDisabled(!canAdd || trimmed.Length == 0);
+            ImGui.BeginDisabled(!canAdd || trimmed.Length == 0 || dupe);
             bool click = AccentButton("Add##a");
             ImGui.EndDisabled();
-            if ((enter || click) && canAdd && trimmed.Length > 0)
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             {
-                var value = trimmed.ToString();
-                if (c.AllowDuplicates || !ContainsString(c, coll, count, value))
-                {
-                    if (Add(r, c, owner, coll, value)) structural = true;
-                }
-                _listInput[r.Path] = "";
-                if (enter) ImGui.SetKeyboardFocusHere(-1);   // keep typing: the next path, the next name
+                if (full) Tooltip("Full: " + c.MaxCount + " " + c.Items + " at most");
+                else if (dupe) Tooltip("Already in the list");
             }
-            if (full && ImGui.IsItemHovered()) Tooltip("Full: " + c.MaxCount + " " + c.Items + " at most");
+            if ((enter || click) && canAdd && trimmed.Length > 0 && !dupe)
+            {
+                if (Add(r, c, owner, coll, trimmed.ToString())) structural = true;
+                _listInput[r.Path] = "";
+            }
         }
         else
         {
@@ -1561,11 +1579,23 @@ internal sealed class SettingsMenu
         return structural;
     }
 
-    private static bool ContainsString(Coll c, object coll, int count, string value)
+    private static bool ContainsString(Coll c, object coll, int count, ReadOnlySpan<char> value)
     {
         for (int i = 0; i < count; i++)
-            if (string.Equals(c.Elem.GetString!(coll, null, i), value, StringComparison.Ordinal)) return true;
+            if (c.Elem.GetString!(coll, null, i).AsSpan().Equals(value, StringComparison.Ordinal)) return true;
         return false;
+    }
+
+    /// <summary>Where a key sits in the dictionary's enumeration order (the order the rows draw in); -1 when absent.</summary>
+    private static int IndexOfKey(System.Collections.IDictionary dict, object key)
+    {
+        int i = 0;
+        foreach (var k in dict.Keys)
+        {
+            if (Equals(k, key)) return i;
+            i++;
+        }
+        return -1;
     }
 
     private static void Swap(System.Collections.IList list, int i, int j)
@@ -1667,7 +1697,8 @@ internal sealed class SettingsMenu
         if (action == ItemAction.Toggle) _listOpen[r.Path] = openIdx == at ? -1 : at;
         else if (action == ItemAction.Remove)
         {
-            try { dict.Remove(snap.Keys[at]!); structural = true; _listOpen[r.Path] = openIdx == at ? -1 : openIdx; }
+            // the rows after the removed one move up by one in the next snapshot (enumeration skips the freed slot)
+            try { dict.Remove(snap.Keys[at]!); structural = true; _listOpen[r.Path] = openIdx == at ? -1 : openIdx > at ? openIdx - 1 : openIdx; }
             catch (Exception ex) { Fault($"[SettingsMenu] {r.Path}: remove failed: {ex.GetType().Name}: {ex.Message}"); }
         }
         // add row: a key, then Add
@@ -1727,7 +1758,8 @@ internal sealed class SettingsMenu
                 dict[newKey] = c.Elem.New!();
                 structural = true;
                 _listInput[r.Path] = "";
-                if (c.Elem.Leaf == Leaf.Object) _listOpen[r.Path] = count;   // the new key lands at the end of the snapshot
+                // open the new one where the next snapshot will draw it (a Dictionary reuses freed slots, so not always last)
+                if (c.Elem.Leaf == Leaf.Object) _listOpen[r.Path] = IndexOfKey(dict, newKey);
             }
             catch (Exception ex) { Fault($"[SettingsMenu] {r.Path}: add failed: {ex.GetType().Name}: {ex.Message}"); }
         }
@@ -2134,6 +2166,8 @@ internal sealed class SettingsMenu
             if (freshOwner == null) { Fault($"[SettingsMenu] {r.Path}: reset found no fresh owner object"); return; }
             r.Set(owner, r.Get(freshOwner));
             _listOpen[r.Path] = -1;
+            if (_dictKeys.TryGetValue(r.Path, out var snap)) snap.Count = -1;   // the key snapshot was of the old dictionary
+            _pillAnim.Clear();                                                  // keyed by the old elements
             ListEdits++;
         }
         catch (Exception ex) { Fault($"[SettingsMenu] reset of {r.Path} failed: {ex.GetType().Name}: {ex.Message}"); }
@@ -2227,6 +2261,15 @@ internal sealed class SettingsMenu
         return c;
     }
 
+    private static (long lo, long hi) IntegerRange(Type t) =>
+        t == typeof(byte) ? (byte.MinValue, byte.MaxValue)
+        : t == typeof(sbyte) ? (sbyte.MinValue, sbyte.MaxValue)
+        : t == typeof(short) ? (short.MinValue, short.MaxValue)
+        : t == typeof(ushort) ? (ushort.MinValue, ushort.MaxValue)
+        : t == typeof(int) ? (int.MinValue, int.MaxValue)
+        : t == typeof(uint) ? (uint.MinValue, uint.MaxValue)
+        : (long.MinValue, long.MaxValue);
+
     private static string Plural(string word)
     {
         if (word.EndsWith("s", StringComparison.OrdinalIgnoreCase) || word.EndsWith("x", StringComparison.OrdinalIgnoreCase)
@@ -2285,7 +2328,14 @@ internal sealed class SettingsMenu
             {
                 e.Leaf = inner == typeof(long) || inner == typeof(uint) ? Leaf.Long : Leaf.Int;
                 e.GetLong = Expression.Lambda<Func<object, object?, int, long>>(Expression.Convert(value, typeof(long)), o, k, i).Compile();
-                if (settable) { var v = Expression.Parameter(typeof(long), "v"); e.SetLong = Expression.Lambda<Action<object, object?, int, long>>(Expression.Assign(access, Expression.Convert(Expression.Convert(v, inner), t)), o, k, i, v).Compile(); }
+                if (settable)
+                {
+                    var v = Expression.Parameter(typeof(long), "v");
+                    var set = Expression.Lambda<Action<object, object?, int, long>>(Expression.Assign(access, Expression.Convert(Expression.Convert(v, inner), t)), o, k, i, v).Compile();
+                    // the unchecked narrowing above would wrap a typed 300 into a byte 44: clamp to the type's range first
+                    var (lo, hi) = IntegerRange(inner);
+                    e.SetLong = lo == long.MinValue && hi == long.MaxValue ? set : (ow, ky, ix, val) => set(ow, ky, ix, Math.Clamp(val, lo, hi));
+                }
                 e.New = () => Activator.CreateInstance(inner);
             }
             else if (inner == typeof(float) || inner == typeof(double))
@@ -2895,7 +2945,7 @@ internal sealed class SettingsMenu
         foreach (var r in s.Rows.SelectMany(Flatten))
         {
             if (!r.HasDefault || r.ReadOnly) continue;
-            if (r.Kind == Kind.Collection) { ResetCollection(r, owner); continue; }
+            if (r.Kind == Kind.Collection) continue;   // a section reset never threw a list away; each list has its own right-click reset
             var node = r.Get(owner);
             if (node != null) SetValue(node, r.Default);
         }
