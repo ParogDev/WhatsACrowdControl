@@ -6,7 +6,7 @@ WhatsACrowdControl is an ExileApi overlay plugin that monitors the player's acti
 
 **Main class**: `WhatsACrowdControl` inherits `BaseSettingsPlugin<WhatsACrowdControlSettings>`
 **Settings class**: `WhatsACrowdControlSettings` implements `ISettings`
-**Key classes**: `CcDefinition` (CC metadata), `ActiveCc` (active CC state), `CcTier` enum (severity tiers), `CrowdControlSettingsUi` (custom ImGui settings panel)
+**Key classes**: `CcDefinition` (CC metadata), `ActiveCc` (active CC state), `CcTier` enum (severity tiers), `CrowdControlSettingsUi` (wires `SettingsMenu` + hand-drawn CC Types / Debug tabs)
 
 ### Architecture
 
@@ -30,7 +30,7 @@ The plugin follows a strict Tick/Render separation:
 | `Initialise()` | Initializes object pool, builds buff→definition lookup |
 | `Tick()` | Scans player buffs, matches against CC definitions, sorts by priority, fills display slots, manages fade animations |
 | `Render()` | Draws CC icons with backgrounds, sweep overlays, timer text, fade animations |
-| `DrawSettings()` | Delegates to `CrowdControlSettingsUi` for custom neon-styled settings panel |
+| `DrawSettings()` | Delegates to `CrowdControlSettingsUi`: `SettingsMenu` (SettingsMenu.cs, from the scaffolding new-plugin template) draws the Overlay tab from [Menu] headers/rows; CC Types (tier legend, icon browser, live buff browser) and Debug tabs are hand-drawn |
 
 ### Current Settings
 
@@ -55,6 +55,8 @@ The plugin follows a strict Tick/Render separation:
 | EnableCombatDebuff | ToggleNode | true | Track shock/blind/silence |
 | CustomCcBuffNames | TextNode | "" | Comma-separated custom buff names |
 | DebugMode | ToggleNode | false | Log all timed buffs |
+
+Section headers (EmptyNode with `[Menu(index)]`; rows hang under them with `parentIndex`): LayoutHeader 200, VisualHeader 300, AreasHeader 400, TierFiltersHeader 100, CustomHeader 600, DebugHeader 500. The settings class stays flat on purpose: nesting rows into [Submenu] classes would change the JSON shape and reset saved settings.
 
 ## Project Setup
 
@@ -339,7 +341,7 @@ ExileApi plugins run every frame (60+ fps). The game process is memory-mapped, s
 - Use Dictionary/HashSet lookups instead of per-frame string comparisons
 - Use switch expressions for tier/type mappings
 - Use readonly fields for immutable configuration
-- Keep settings UI in separate class if complex (e.g., `CrowdControlSettingsUi`)
+- Settings UI: `SettingsMenu.cs` draws every [Menu] row; add a setting with a [Menu] label/tooltip (and `index`/`parentIndex` under a header) instead of hand-drawing it. Hand-draw only live content (CC Types / Debug tabs in `CrowdControlSettingsUi`).
 
 ## Coordinate Systems
 
