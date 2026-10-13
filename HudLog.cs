@@ -19,7 +19,9 @@ namespace WhatsACrowdControl;
 ///     text when the key comes back after the window, or on <see cref="Flush"/> (call it from OnClose). At most
 ///     <see cref="MaxKeys"/> keys are tracked; past that, new keys are shown without dedup (texts that vary).
 /// Quiet writes through the HUD's own Serilog logger (Core.Logger, the one DebugWindow writes to), found by reflection
-/// so the plugin needs no Serilog reference. While it is not set yet (not now, looked up at most once a second) a line
+/// so the plugin needs no Serilog reference; its Information(string, object[]) is bound once into a delegate (no
+/// per-line MethodInfo.Invoke). If it can't be bound as a delegate, that is named once in the log file and lines go
+/// through MethodInfo.Invoke instead. While it is not set yet (not now, looked up at most once a second) a line
 /// falls back to the screen. A missing member is broken for good; a write that throws falls back for
 /// <see cref="RetrySec"/>, then tries again. Each break is named once on screen: nothing is swallowed.
 /// </summary>
@@ -32,7 +34,7 @@ internal static class HudLog
     private static readonly object Lock = new();
     private static readonly Dictionary<string, (DateTime at, int skipped, string last)> Seen = new();
     private static object? _logger;
-    private static MethodInfo? _info;
+    private static Action<string, object[]>? _info;   // bound once in Bind(): a direct call per line, no MethodInfo.Invoke
     private static string? _broken;       // why the file can't be written now (null = fine or not set yet)
     private static bool _permanent;       // the break is a missing member: never retried
     private static DateTime _retryAt;
@@ -92,7 +94,7 @@ internal static class HudLog
     private static bool Write(string text)
     {
         object? logger;
-        MethodInfo? write;
+        Action<string, object[]>? write;
         lock (Lock)
         {
             if (_logger == null && !_permanent && DateTime.UtcNow >= _retryAt)
@@ -110,7 +112,7 @@ internal static class HudLog
             try
             {
                 // Template "{M:l}" with the text as its value: braces in the text are never parsed as a template.
-                write.Invoke(logger, new object[] { "{M:l}", new object[] { text } });
+                write("{M:l}", new object[] { text });
                 _brokenShown = false;
                 return true;
             }
@@ -155,7 +157,24 @@ internal static class HudLog
             _permanent = true;
             return;
         }
-        _info = info;
+        // Bind once: a delegate closed over the logger, so each line is a direct call (an interface method still
+        // dispatches virtually through it). A bind that fails (signature or visibility mismatch) is named once in the
+        // log file and lines fall back to MethodInfo.Invoke.
+        string? unbound = null;
+        Action<string, object[]> write;
+        try
+        {
+            write = (Action<string, object[]>)info.CreateDelegate(typeof(Action<string, object[]>), logger);
+        }
+        catch (Exception ex)
+        {
+            unbound = $"{info.DeclaringType?.FullName}.Information(string, object[]) can't be bound as Action<string, object[]> ({ex.GetType().Name}: {ex.Message})";
+            write = (template, values) => info.Invoke(logger, new object[] { template, values });
+        }
+        _info = write;
         _logger = logger;
+        if (unbound == null) return;
+        try { write("{M:l}", new object[] { $"{Prefix}[Log] {unbound}: falling back to MethodInfo.Invoke per line" }); }
+        catch { /* a failing logger is named by the next Write, which hits the same throw */ }
     }
 }
