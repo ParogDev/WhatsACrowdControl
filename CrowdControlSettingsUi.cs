@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using ExileCore;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Graphics = ExileCore.Graphics;
 
 namespace WhatsACrowdControl;
@@ -218,7 +218,7 @@ public class CrowdControlSettingsUi
         dl.AddRect(iconMin - new Vector2(2, 2), iconMax + new Vector2(2, 2), U32(tierColor with { W = 0.5f }), 4f);
         IntPtr tex = IntPtr.Zero;
         if (_gfx != null && _gfx.HasImage(entry.ImageKey)) tex = _gfx.GetTextureId(entry.ImageKey);
-        if (tex != IntPtr.Zero) dl.AddImage(tex, iconMin, iconMax);
+        if (tex != IntPtr.Zero) dl.AddImage(new ImTextureRef { TexID = tex }, iconMin, iconMax);
         else
         {
             var q = ImGui.CalcTextSize("?");
