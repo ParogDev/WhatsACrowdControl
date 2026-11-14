@@ -5,7 +5,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Numerics;
 using System.Reflection;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using ExileCore;
 using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
@@ -601,7 +601,7 @@ internal sealed class SettingsMenu
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f, 8f));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, SurfaceFill(window, frame, depth));
         ImGui.PushStyleColor(ImGuiCol.Border, U32(Accent, 0.18f));
-        ImGui.BeginChild("##card", new Vector2(0, 0), ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY | ImGuiChildFlags.AlwaysAutoResize);
+        ImGui.BeginChild("##card", new Vector2(0, 0), ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeY | ImGuiChildFlags.AlwaysAutoResize);
         try
         {
             bool open = true;
@@ -786,7 +786,7 @@ internal sealed class SettingsMenu
         {
             var dl = ImGui.GetWindowDrawList();
             var p = ImGui.GetCursorScreenPos();
-            float maxX = ImGui.GetWindowPos().X + ImGui.GetWindowContentRegionMax().X;
+            float maxX = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
             dl.PushClipRect(new Vector2(p.X, p.Y), new Vector2(maxX, p.Y + ImGui.GetTextLineHeight() + 2), true);
             dl.AddText(p, Muted, r.Tip);
             dl.PopClipRect();
@@ -1163,7 +1163,7 @@ internal sealed class SettingsMenu
         {
             var style = ImGui.GetStyle();
             float next = ImGui.GetItemRectMax().X + style.ItemSpacing.X + ImGui.CalcTextSize(text).X + 2 * style.FramePadding.X + 4f;
-            if (next < ImGui.GetWindowPos().X + ImGui.GetWindowContentRegionMax().X) ImGui.SameLine();
+            if (next < ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X) ImGui.SameLine();
         }
         ImGui.PushStyleColor(ImGuiCol.Button, U32(Accent, 0.12f));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, U32(Accent, 0.28f));
@@ -1419,7 +1419,7 @@ internal sealed class SettingsMenu
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f, 6f));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, SurfaceFill(style.Colors[(int)ImGuiCol.WindowBg], style.Colors[(int)ImGuiCol.FrameBg], _depth + 1));
         ImGui.PushStyleColor(ImGuiCol.Border, U32(Accent, 0.12f));
-        ImGui.BeginChild("##list", new Vector2(0, 0), ImGuiChildFlags.Border | ImGuiChildFlags.AutoResizeY | ImGuiChildFlags.AlwaysAutoResize);
+        ImGui.BeginChild("##list", new Vector2(0, 0), ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeY | ImGuiChildFlags.AlwaysAutoResize);
         try
         {
             if (c.Above != null)
@@ -1837,7 +1837,7 @@ internal sealed class SettingsMenu
     private ItemAction TrailingButtons(Coll c, int i, int count, bool canResize, float trailing)
     {
         var action = ItemAction.None;
-        ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - trailing + ImGui.GetStyle().ItemSpacing.X);
+        ImGui.SameLine((ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X - ImGui.GetWindowPos().X) - trailing + ImGui.GetStyle().ItemSpacing.X);
         ImGui.PushStyleColor(ImGuiCol.Button, U32(Accent, 0.08f));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, U32(Accent, 0.22f));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, U32(Accent, 0.35f));
@@ -2081,7 +2081,7 @@ internal sealed class SettingsMenu
         if (!string.IsNullOrEmpty(tip) && ImGui.IsItemHovered()) Tooltip(tip);
         if (e.Optional && e.Settable)
         {
-            ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - 70f);
+            ImGui.SameLine((ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X - ImGui.GetWindowPos().X) - 70f);
             if (obj == null)
             {
                 if (AccentButton("Set up##mk") && e.New != null) { e.SetObject!(owner, key, index, e.New()); ListEdits++; }
